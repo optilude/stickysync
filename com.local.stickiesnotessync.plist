@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Must be unique on your system. -->
+    <key>Label</key>
+    <string>com.local.stickiesnotessync</string>
+
+    <!-- REPLACE BOTH PATHS BELOW with absolute paths on your Mac.
+         launchd does not expand ~, so spell out /Users/maraspeli/... in full.
+         The first argument MUST be the venv's python3 (the same binary you
+         granted Full Disk Access to), not /usr/bin/python3. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/maraspeli/Build/Python/stickysync/bin/python3</string>
+        <string>/Users/maraspeli/Build/Python/stickysync/stickysync.py</string>
+    </array>
+
+    <!-- Start automatically at login. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart it automatically if it crashes. Set to false while debugging
+         if you'd rather it stay dead so you can read the error. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Needed so a GUI (menu bar icon, AppleScript to Notes) works. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- launchd's own logs, separate from the app's own sync.log. Useful
+         if the app fails to even start. -->
+    <key>StandardOutPath</key>
+    <string>/Users/maraspeli/Library/Application Support/StickySync/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/maraspeli/Library/Application Support/StickySync/launchd.err.log</string>
+</dict>
+</plist>
