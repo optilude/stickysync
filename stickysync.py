@@ -123,6 +123,7 @@ def _run_applescript(script: str) -> str:
 def ensure_notes_folder(account: str, folder: str) -> None:
     script = f'''
     tell application "Notes"
+        launch
         tell account "{_as_literal(account)}"
             if not (exists folder "{_as_literal(folder)}") then
                 make new folder with properties {{name:"{_as_literal(folder)}"}}
@@ -137,6 +138,7 @@ def create_note(account: str, folder: str, html_path: Path) -> str:
     script = f'''
     set htmlText to (read (POSIX file "{_as_literal(str(html_path))}") as «class utf8»)
     tell application "Notes"
+        launch
         tell account "{_as_literal(account)}"
             tell folder "{_as_literal(folder)}"
                 set newNote to make new note with properties {{body:htmlText}}
@@ -149,16 +151,29 @@ def create_note(account: str, folder: str, html_path: Path) -> str:
 
 
 def update_note(note_id: str, html_path: Path) -> bool:
-    """Returns True if the note was updated, False if it no longer exists."""
+    """Returns True if the note was updated, False if it no longer exists
+    (or is in Recently Deleted)."""
     script = f'''
     set htmlText to (read (POSIX file "{_as_literal(str(html_path))}") as «class utf8»)
     tell application "Notes"
+        launch
         try
             set theNote to note id "{_as_literal(note_id)}"
         on error
             return "MISSING"
         end try
-        set body of theNote to htmlText
+        try
+            set body of theNote to htmlText
+        on error errMsg number errNum
+            -- Notes in "Recently Deleted" still resolve by id but are read-only.
+            set noteId to id of theNote
+            repeat with acct in accounts
+                if exists folder "Recently Deleted" of acct then
+                    if (id of notes of folder "Recently Deleted" of acct) contains noteId then return "MISSING"
+                end if
+            end repeat
+            error errMsg number errNum
+        end try
         return "OK"
     end tell
     '''
@@ -168,6 +183,7 @@ def update_note(note_id: str, html_path: Path) -> bool:
 def delete_note(note_id: str) -> None:
     script = f'''
     tell application "Notes"
+        launch
         try
             delete (note id "{_as_literal(note_id)}")
         end try
@@ -243,71 +259,80 @@ def save_mapping(mapping: dict) -> None:
 def run_sync() -> dict:
     stats = {"created": 0, "updated": 0, "deleted": 0, "unchanged": 0, "errors": 0}
 
-    container = Path(CONFIG["stickies_container"]).expanduser()
-    account = CONFIG["notes_account"]
-    folder = CONFIG["notes_folder"]
+    notes_was_running = _run_applescript('return application "Notes" is running') == "true"
 
     try:
-        ensure_notes_folder(account, folder)
-    except Exception as exc:
-        logger.error("Could not ensure Notes folder exists: %s", exc)
-        stats["errors"] += 1
-        return stats
-
-    current = read_stickies(container)
-    mapping = load_mapping()
-
-    # Deletions: mapped notes whose Stickies file is gone.
-    for uuid in list(mapping):
-        if uuid not in current:
-            try:
-                delete_note(mapping[uuid]["notes_id"])
-                stats["deleted"] += 1
-            except Exception as exc:
-                logger.error("Failed to delete note for %s: %s", uuid, exc)
-                stats["errors"] += 1
-            del mapping[uuid]
-
-    # Creates and updates.
-    for uuid, html in current.items():
-        digest = content_hash(html)
-        entry = mapping.get(uuid)
-
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".html", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(html)
-            html_path = Path(tmp.name)
+        container = Path(CONFIG["stickies_container"]).expanduser()
+        account = CONFIG["notes_account"]
+        folder = CONFIG["notes_folder"]
 
         try:
-            if entry is None:
-                note_id = create_note(account, folder, html_path)
-                mapping[uuid] = {
-                    "notes_id": note_id,
-                    "content_hash": digest,
-                    "last_synced": datetime.now(timezone.utc).isoformat(),
-                }
-                stats["created"] += 1
-            elif entry["content_hash"] != digest:
-                updated = update_note(entry["notes_id"], html_path)
-                if not updated:
-                    # Note was deleted or moved on the Notes side; recreate it.
-                    note_id = create_note(account, folder, html_path)
-                    mapping[uuid]["notes_id"] = note_id
-                mapping[uuid]["content_hash"] = digest
-                mapping[uuid]["last_synced"] = datetime.now(timezone.utc).isoformat()
-                stats["updated"] += 1
-            else:
-                stats["unchanged"] += 1
+            ensure_notes_folder(account, folder)
         except Exception as exc:
-            logger.error("Sync failed for %s: %s", uuid, exc)
+            logger.error("Could not ensure Notes folder exists: %s", exc)
             stats["errors"] += 1
-        finally:
-            html_path.unlink(missing_ok=True)
+            return stats
 
-    save_mapping(mapping)
-    logger.info("Sync complete: %s", stats)
-    return stats
+        current = read_stickies(container)
+        mapping = load_mapping()
+
+        # Deletions: mapped notes whose Stickies file is gone.
+        for uuid in list(mapping):
+            if uuid not in current:
+                try:
+                    delete_note(mapping[uuid]["notes_id"])
+                    stats["deleted"] += 1
+                except Exception as exc:
+                    logger.error("Failed to delete note for %s: %s", uuid, exc)
+                    stats["errors"] += 1
+                del mapping[uuid]
+
+        # Creates and updates.
+        for uuid, html in current.items():
+            digest = content_hash(html)
+            entry = mapping.get(uuid)
+
+            with tempfile.NamedTemporaryFile(
+                "w", suffix=".html", delete=False, encoding="utf-8"
+            ) as tmp:
+                tmp.write(html)
+                html_path = Path(tmp.name)
+
+            try:
+                if entry is None:
+                    note_id = create_note(account, folder, html_path)
+                    mapping[uuid] = {
+                        "notes_id": note_id,
+                        "content_hash": digest,
+                        "last_synced": datetime.now(timezone.utc).isoformat(),
+                    }
+                    stats["created"] += 1
+                elif entry["content_hash"] != digest:
+                    updated = update_note(entry["notes_id"], html_path)
+                    if not updated:
+                        # Note was deleted or moved on the Notes side; recreate it.
+                        note_id = create_note(account, folder, html_path)
+                        mapping[uuid]["notes_id"] = note_id
+                    mapping[uuid]["content_hash"] = digest
+                    mapping[uuid]["last_synced"] = datetime.now(timezone.utc).isoformat()
+                    stats["updated"] += 1
+                else:
+                    stats["unchanged"] += 1
+            except Exception as exc:
+                logger.error("Sync failed for %s: %s", uuid, exc)
+                stats["errors"] += 1
+            finally:
+                html_path.unlink(missing_ok=True)
+
+        save_mapping(mapping)
+        logger.info("Sync complete: %s", stats)
+        return stats
+    finally:
+        if not notes_was_running:
+            try:
+                _run_applescript('tell application "Notes" to quit')
+            except Exception as exc:
+                logger.error("Failed to quit Notes after sync: %s", exc)
 
 
 # --------------------------------------------------------------------------

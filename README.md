@@ -56,10 +56,10 @@ A menu bar icon (🗒) should appear. This first run also creates a config
 file at:
 
 ```
-~/Library/Application Support/StickiesNotesSync/config.json
+~/Library/Application Support/StickySync/config.json
 ```
 
-Open it (`open ~/Library/Application\ Support/StickiesNotesSync/config.json`)
+Open it (`open ~/Library/Application\ Support/StickySync/config.json`)
 and adjust:
 
 - `stickies_container` — only if step 1 found a different path.
@@ -91,7 +91,7 @@ The first sync will trigger one or two macOS permission prompts:
 - Click the menu bar icon → **Sync now**.
 - Check Notes.app for the new folder and notes.
 - If something's wrong, click **Open log** from the menu, or check
-  `~/Library/Application Support/StickiesNotesSync/sync.log` directly.
+  `~/Library/Application Support/StickySync/sync.log` directly.
 
 If notes are created but formatting looks off, or nothing shows up at all
 while the log says "No .rtfd notes found... Directory contains: [...]",
@@ -145,7 +145,7 @@ rm ~/Library/LaunchAgents/com.local.stickiesnotessync.plist
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.local.stickiesnotessync.plist
 rm ~/Library/LaunchAgents/com.local.stickiesnotessync.plist
-rm -rf ~/Library/Application\ Support/StickiesNotesSync
+rm -rf ~/Library/Application\ Support/StickySync
 rm -rf ~/Developer/stickies-notes-sync
 ```
 
